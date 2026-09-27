@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This repository only contains installation glue, configuration and a small
-status indicator. The actual input method implementation is
-[panxuc/fcitx5-wetypex](https://github.com/panxuc/fcitx5-wetypex) (MIT), and the
-official WeChat input method runtime it extracts belongs to Tencent and is
-covered by its own license. See the "许可与声明" section of README.md.

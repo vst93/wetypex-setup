@@ -530,7 +530,12 @@ GitHub Actions 会自动编译 `wetypex-voice-osd-x86_64` 并挂到 Release 上�
 
 ## 许可与声明
 
-本仓库自有代码使用 **MIT License**。
+本仓库自有代码（`install.sh` / `uninstall.sh` / `voice-osd/` / `extras/`）使用
+**[MIT License](LICENSE)**。
+
+> 仓库里只包含安装脚本、配置和一个小提示程序。真正的输入法实现是
+> [panxuc/fcitx5-wetypex](https://github.com/panxuc/fcitx5-wetypex)（MIT），
+> 而它提取的微信输入法官方运行时归腾讯所有，受其自己的许可约束。
 
 WeTypeX 是一个**非官方**的第三方开源项目，仅供个人学习交流使用，与腾讯公司无任何关联、
 合作或背书关系。本项目同样如此。使用前请阅读并遵守
