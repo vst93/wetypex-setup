@@ -1,0 +1,11 @@
+# Rust 构建产物
+/target
+voice-osd/target
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 编辑器
+*.swp
+.DS_Store

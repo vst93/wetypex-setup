@@ -1,0 +1,14 @@
+[Unit]
+Description=WeTypeX 语音输入提示（音量波形 / 识别中 / 识别结果）
+After=graphical-session.target
+PartOf=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/wetypex-voice-osd
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,47 @@
+name: build & release
+
+# 打 tag（v*）时自动编译浮窗程序并把二进制挂到 Release 上，
+# 这样没装 Rust 的人也能直接下载用。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Build voice-osd (release)
+        run: cargo build --release --manifest-path voice-osd/Cargo.toml
+
+      - name: Stage binary
+        run: |
+          install -m755 voice-osd/target/release/wetypex-voice-osd wetypex-voice-osd-x86_64
+          sha256sum wetypex-voice-osd-x86_64 > wetypex-voice-osd-x86_64.sha256
+          ls -l wetypex-voice-osd-x86_64
+          cat wetypex-voice-osd-x86_64.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wetypex-voice-osd-x86_64
+          path: |
+            wetypex-voice-osd-x86_64
+            wetypex-voice-osd-x86_64.sha256
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            wetypex-voice-osd-x86_64
+            wetypex-voice-osd-x86_64.sha256
+          generate_release_notes: true
