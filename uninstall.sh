@@ -105,7 +105,17 @@ else
   info "没有找到本脚本写入的 fn 映射，跳过"
 fi
 
-# ── 4. 软件包 ───────────────────────────────────────────────────────────────
+# ── 4. 语音尾巴补丁 ─────────────────────────────────────────────────────────
+step "移除「松手后补录」补丁"
+if sudo test -x /usr/local/bin/wetypex-patch-voice-tail 2>/dev/null; then
+  sudo /usr/local/bin/wetypex-patch-voice-tail --revert 2>/dev/null || true
+  sudo rm -f /usr/local/bin/wetypex-patch-voice-tail
+fi
+sudo rm -f /etc/pacman.d/hooks/wetypex-voice-tail.hook
+info "补录时长配置保留在 ~/.config/wetypex-setup/voice-tail（不需要可直接删）"
+ok "补丁、pacman 钩子、补丁脚本已移除"
+
+# ── 5. 软件包 ──────────────────────────────────────────────────────────────
 step "软件包"
 if ((PURGE)); then
   if confirm "卸载 fcitx5-wetypex 软件包？"; then
@@ -116,7 +126,7 @@ else
   info "保留 fcitx5-wetypex（要删掉请加 --purge）"
 fi
 
-# ── 5. 提醒 ─────────────────────────────────────────────────────────────────
+# ── 6. 提醒 ─────────────────────────────────────────────────────────────────
 step "还需要你手动确认的东西"
 cat <<EOF
 

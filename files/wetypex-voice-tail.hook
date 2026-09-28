@@ -1,0 +1,12 @@
+# WeTypeX 的语音脚本属于 fcitx5-wetypex 包，升级时会被覆盖。
+# 这个钩子在每次安装/升级后自动把「松手后补录」的补丁重新打上。
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = fcitx5-wetypex
+
+[Action]
+Description = WeTypeX 语音：补回「松手后补录」的尾巴
+When = PostTransaction
+Exec = /usr/local/bin/wetypex-patch-voice-tail

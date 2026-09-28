@@ -8,7 +8,7 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly SELF_VERSION="1.0.1"
+readonly SELF_VERSION="1.0.2"
 # 预编译浮窗二进制的下载来源（fork 之后改成自己的仓库）
 readonly GITHUB_REPO="vst93/wetypex-setup"
 
@@ -95,9 +95,16 @@ backup_file() {
 
 # ── 环境检查 ────────────────────────────────────────────────────────────────
 step "检查环境"
+# 必须在普通用户下跑：脚本要往 $HOME 写配置，用 root 会装到 /root 去。
+# 需要 root 的步骤（装包、改 keyd、打语音补丁）脚本内部会自己调 sudo。
+if ((EUID == 0)); then
+  die "请不要用 root / sudo 运行本脚本。
+  它要往 \$HOME 下写用户配置，以 root 运行会装到 /root 去。
+  需要 root 的步骤脚本会自己调 sudo。"
+fi
 [[ $(uname -m) == "x86_64" ]] || die "WeTypeX 官方运行时只提供 x86-64"
 command -v pacman >/dev/null || die "目前只支持 Arch 系发行版（需要 pacman）。
-  Debian/Ubuntu 请用官方 .deb，Fedora 请用 .rpm，然后手动执行本脚本的第 3~8 步。"
+  Debian/Ubuntu 请用官方 .deb，Fedora 请用 .rpm，然后手动执行本脚本的第 3~10 步。"
 command -v python3 >/dev/null || die "需要 python3"
 ok "Arch 系发行版 / x86-64 / python3"
 
@@ -165,8 +172,10 @@ else
   else
   info "查询 GitHub 最新 Release ..."
   API="https://api.github.com/repos/panxuc/fcitx5-wetypex/releases/latest"
-  if ! RELEASE_JSON="$(curl -fsSL "$API")"; then
-    die "无法访问 GitHub API。可以改用 AUR：yay -S fcitx5-wetypex"
+  if ! RELEASE_JSON="$(curl -fsSL --connect-timeout 10 --max-time 30 "$API")"; then
+    warn "无法访问 GitHub API（超时或连不上）。国内网络可以试试："
+    warn "  export https_proxy=http://127.0.0.1:7897    # 改成你自己的代理"
+    die "也可以改用 AUR： yay -S fcitx5-wetypex"
   fi
   PKG_URL="$(printf '%s' "$RELEASE_JSON" | python3 -c '
 import json, sys
@@ -180,9 +189,9 @@ print(next((a["browser_download_url"] for a in d["assets"]
             if a["name"] == "SHA256SUMS"), ""))')"
   PKG_NAME="$(basename "$PKG_URL")"
   info "下载 $PKG_NAME"
-  curl -fsSL -o "$TMPDIR_DL/$PKG_NAME" "$PKG_URL"
+  curl -fsSL --connect-timeout 10 --max-time 600 -o "$TMPDIR_DL/$PKG_NAME" "$PKG_URL"
   if [[ -n $SUMS_URL ]]; then
-    curl -fsSL -o "$TMPDIR_DL/SHA256SUMS" "$SUMS_URL"
+    curl -fsSL --connect-timeout 10 --max-time 30 -o "$TMPDIR_DL/SHA256SUMS" "$SUMS_URL"
     ( cd "$TMPDIR_DL" && grep -F "$PKG_NAME" SHA256SUMS | sha256sum -c - >/dev/null ) \
       || die "SHA256 校验失败，已中止"
     ok "SHA256 校验通过"
@@ -206,7 +215,8 @@ elif [[ -n $ARCHIVE ]]; then
   fcitx5-wetypex-setup --archive "$ARCHIVE"
   ok "已从 $ARCHIVE 提取"
 elif confirm "从腾讯官方地址下载固定版本包？(约 307MB，等同于接受上游许可)"; then
-  fcitx5-wetypex-setup --download --accept-upstream-license
+  # 给上游脚本加个总超时，避免网络卡住时无限期挂着
+  timeout 1800 fcitx5-wetypex-setup --download --accept-upstream-license
   ok "运行时已准备"
 else
   die "没有运行时，输入法无法工作。可稍后手动执行：
@@ -445,7 +455,8 @@ fi
 # 没有 Rust 工具链就下载 CI 编译好的二进制
 if ((OSD_BUILT == 0)); then
   info "从 GitHub Release 获取预编译二进制 ..."
-  OSD_URL="$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" 2>/dev/null \
+  OSD_URL="$(curl -fsSL --connect-timeout 10 --max-time 30 \
+    "https://api.github.com/repos/$GITHUB_REPO/releases/latest" 2>/dev/null \
     | python3 -c '
 import json, sys
 try:
@@ -455,7 +466,12 @@ try:
 except Exception:
     print("")' )"
   if [[ -n $OSD_URL ]]; then
-    curl -fsSL -o "$OSD_BIN.new" "$OSD_URL"
+    if ! curl -fsSL --connect-timeout 10 --max-time 180 -o "$OSD_BIN.new" "$OSD_URL"; then
+      rm -f "$OSD_BIN.new"
+      die "下载预编译二进制失败（超时）。国内网络可以试试：
+    export https_proxy=http://127.0.0.1:7897    # 改成你自己的代理
+    或者装个 Rust 从源码编译： sudo pacman -S rust"
+    fi
     install -m755 "$OSD_BIN.new" "$OSD_BIN"
     rm -f "$OSD_BIN.new"
     ok "已下载预编译版本（$(stat -c%s "$OSD_BIN") 字节）"
@@ -477,7 +493,36 @@ else
   warn "浮窗服务没起来，看看：journalctl --user -u wetypex-voice-osd -n 30"
 fi
 
-# ── 9. 状态栏插件 ───────────────────────────────────────────────────────────
+# ── 9. 松手后补录（语音尾巴） ──────────────────────────────────────────────
+step "配置语音「松手后补录」尾巴"
+VOICE_SCRIPT=/usr/bin/fcitx5-wetypex-voice
+TAIL_CONF="$HOME/.config/wetypex-setup/voice-tail"
+mkdir -p "$(dirname "$TAIL_CONF")"
+if [[ ! -f $TAIL_CONF ]]; then
+  printf '1\n' > "$TAIL_CONF"
+  info "已写入默认补录时长 1 秒：$TAIL_CONF"
+fi
+
+# 说明：人往往在松开按键之后才把最后一个字说完，而 WeTypeX 的语音脚本
+# 会在 stop 的瞬间就 kill 掉 pw-record，于是末尾一两个字总是识别不出来。
+# /usr/bin/fcitx5-wetypex-voice 是包里的文件，所以补丁 + pacman 钩子。
+if ((SUDO_AVAILABLE == 0)); then
+  warn "没有 sudo 权限，跳过补录补丁（它要改 /usr/bin/fcitx5-wetypex-voice）"
+  warn "请手动执行："
+  warn "  sudo install -m755 '$SCRIPT_DIR/files/patch-voice-tail.py' /usr/local/bin/wetypex-patch-voice-tail"
+  warn "  sudo wetypex-patch-voice-tail"
+elif [[ ! -f $VOICE_SCRIPT ]]; then
+  warn "找不到 $VOICE_SCRIPT，跳过"
+else
+  sudo install -m755 "$SCRIPT_DIR/files/patch-voice-tail.py" /usr/local/bin/wetypex-patch-voice-tail
+  sudo /usr/local/bin/wetypex-patch-voice-tail || warn "打补丁失败，请手动检查 $VOICE_SCRIPT"
+  # 包升级会把补丁冲掉，用 pacman 钩子自动重打
+  sudo install -Dm644 "$SCRIPT_DIR/files/wetypex-voice-tail.hook" \
+       /etc/pacman.d/hooks/wetypex-voice-tail.hook
+  ok "补录尾巴已生效（当前 $(cat "$TAIL_CONF") 秒；改 $TAIL_CONF 可调，写 0 关闭）"
+fi
+
+# ── 10. 状态栏插件 ──────────────────────────────────────────────────────────
 step "修补状态栏输入法插件"
 PANEL="$HOME/.config/omarchy/plugins/unseencurtain.languages/Panel.qml"
 if ((WANT_STATUS == 0)); then

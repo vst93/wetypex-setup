@@ -45,6 +45,7 @@
 | **没有任何录音提示** | 按了快捷键屏幕上什么都不变 | 自建音量波形浮窗（本仓库的 Rust 程序） |
 | **状态栏显示错误** | 一直是 "EN"，切不回来 | 修补状态栏插件的写死列表 |
 | **语音识别没结果** | 录了但插不进文字 | 见[踩坑记录](#踩坑记录)第 4 条 |
+| **末尾几个字识别不出来** | 松开 Fn 的瞬间就不录了 | 给语音脚本加「松手后补录」尾巴（默认 1 秒，可调） |
 
 ---
 
@@ -198,7 +199,46 @@ WeTypeX **完全没有录音提示界面**（见[踩坑记录](#踩坑记录)第
   [GitHub Actions](.github/workflows/release.yml) 在打 tag 时编译好的预编译二进制
 - 开机自启：`~/.config/systemd/user/wetypex-voice-osd.service`
 
-### 8. 状态栏插件（可选）
+### 8. 松手后补录尾巴
+
+**症状**：末尾一两个字总是识别不出来。
+
+**原因**：人说话时往往在**松开按键之后**才把最后一个字说完（中文的尾音尤其明显），
+而 WeTypeX 的语音脚本在 `stop` 的瞬间就 kill 掉录音进程：
+
+```sh
+# /usr/bin/fcitx5-wetypex-voice 的 stop 分支
+kill -INT "$recorder" 2>/dev/null || true
+```
+
+实测确认录音本身没被截断（wav 与 opus 时长一致），丢的是松手之后那一段。
+
+**处理**：在 `kill -INT` 之前插一段 sleep，让录音多跑一会儿：
+
+```sh
+_wetypex_tail="$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/wetypex-setup/voice-tail" 2>/dev/null || true)"
+case "$_wetypex_tail" in ''|*[!0-9.]*|.|*..*) _wetypex_tail=1 ;; esac
+sleep "$_wetypex_tail"
+```
+
+补录时长写在这里（秒，默认 1，写 0 关闭）：
+
+```text
+~/.config/wetypex-setup/voice-tail
+```
+
+`/usr/bin/fcitx5-wetypex-voice` 属于 `fcitx5-wetypex` 包，升级会被覆盖，
+所以安装器同时装了：
+
+- `/usr/local/bin/wetypex-patch-voice-tail` —— 打/撤销补丁（幂等）
+- `/etc/pacman.d/hooks/wetypex-voice-tail.hook` —— 每次装/升级后自动重打
+
+```bash
+sudo wetypex-patch-voice-tail --check     # 看有没有打上
+sudo wetypex-patch-voice-tail --revert    # 撤销
+```
+
+### 9. 状态栏插件（可选）
 
 Omarchy 社区插件 `unseencurtain.languages` 的输入法列表是**写死**的，只有
 `keyboard-us` 和 `pinyin`。装了微信输入法之后 `activeIndex` 匹配不到，会回落到 0，
@@ -430,6 +470,7 @@ sudo keyd monitor
 | 按住 Fn 没反应 | `sudo keyd monitor` 按 Fn 是否输出 `rightcontrol`；`wetypex.json` 里 `voice_hold_key` 是否 `Control_R` |
 | 浮窗不出现 | 服务是否 active；非 Omarchy 环境会退回 `notify-send`，确认装了 `libnotify` |
 | 浮窗 / 语音哪里不对 | `wetypex-voice-osd --status` 一条命令看清楚：显示后端、路径、录音状态、识别结果、当前电平 |
+| 末尾几个字识别不出来 | 调大补录尾巴：`echo 1.5 > ~/.config/wetypex-setup/voice-tail`；确认补丁在：`sudo wetypex-patch-voice-tail --check` |
 | 浮窗出现但没文字 | 看 `state/voice/result.json` 的 `ok`；`ok:false` 说明没识别到内容 |
 | 识别不出内容 | 见[踩坑记录](#踩坑记录)第 4 条，以及麦克风：`pw-record --rate 48000 --channels 1 /tmp/t.wav` 录 5 秒说话，`ffmpeg -i /tmp/t.wav -af volumedetect -f null -` 看 `max_volume`（正常说话应在 -20 ~ -30 dB） |
 | 状态栏一直显示 EN | 状态栏插件的输入法列表是写死的，跑 `extras/patch-statusbar-languages.py` |
@@ -458,7 +499,9 @@ wetypex-setup/
 ├── .github/workflows/release.yml       打 tag 自动编译并发布浮窗二进制
 ├── files/
 │   ├── wetypex-voice-osd.service      systemd 用户服务
-│   └── keyd-default.conf              Fn → 右 Ctrl
+│   ├── keyd-default.conf              Fn → 右 Ctrl
+│   ├── patch-voice-tail.py            「松手后补录」补丁（幂等，可撤销）
+│   └── wetypex-voice-tail.hook        pacman 钩子：包升级后自动重打补丁
 ├── voice-osd/                         浮窗提示（Rust，纯 std 零依赖）
 │   ├── Cargo.toml
 │   ├── README.md
