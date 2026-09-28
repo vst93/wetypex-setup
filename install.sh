@@ -246,9 +246,12 @@ data.setdefault("clipboard_enabled", True)
 data.setdefault("shift_switch", True)          # Shift 切换中英文
 data.setdefault("voice_hold_shortcut", True)
 data.setdefault("voice_hold_key", "Control_R") # 配合 keyd 的 Fn -> 右 Ctrl
+data.setdefault("voice_launch_shortcut", True)
 data.setdefault("voice_launch_key",
                 "Control+Super+Shift_L,Control+Shift+Super_L,Super+Shift+Control_L")
 data.setdefault("voice_microphone", "自动检测")
+# 注意：voice_launch_shortcut / voice_hold_shortcut 会被微信账号的云端设置同步覆盖。
+# 如果快捷键按了没反应，去 fcitx5-wetypex-settings 或直接改这个文件再重启 fcitx5。
 
 path.write_text(json.dumps(data, ensure_ascii=False, indent=4) + "\n", encoding="utf-8")
 print("    " + ", ".join(f"{k}={v}" for k, v in sorted(data.items())))
@@ -300,8 +303,9 @@ fcitx5_start() {
 
 PROFILE="$HOME/.config/fcitx5/profile"
 mkdir -p "$(dirname "$PROFILE")"
-fcitx5_stop
-B="$(backup_file "$PROFILE")"; [[ -n $B ]] && info "已备份到 $(basename "$B")"
+
+# 把 wetypex 写进 profile。抽成函数，便于被游离实例回写后重试。
+write_wetypex_profile() {
 KEEP_DEFAULT="$KEEP_DEFAULT" python3 - "$PROFILE" <<'PY'
 import os, pathlib, re, sys
 
@@ -353,8 +357,30 @@ if not keep_default:
 
 path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 PY
+}
+
+fcitx5_stop
+B="$(backup_file "$PROFILE")"; [[ -n $B ]] && info "已备份到 $(basename "$B")"
+write_wetypex_profile
 fcitx5_start
-ok "输入法列表已更新"
+
+# 校验：DBus 抢名期间，游离 fcitx5 实例退出时会把内存里的旧 profile 写回，
+# 把刚加的 wetypex 静默删掉（踩坑记录第 6 条的连带问题）。发现就重写并重启。
+for attempt in 1 2 3; do
+  if grep -q '^Name=wetypex' "$PROFILE"; then
+    break
+  fi
+  warn "profile 里没有 wetypex（疑似被游离 fcitx5 实例回写），第 $attempt 次重写并重启 ..."
+  fcitx5_stop
+  write_wetypex_profile
+  fcitx5_start
+done
+if grep -q '^Name=wetypex' "$PROFILE"; then
+  ok "输入法列表已更新"
+else
+  warn "profile 里仍没有 wetypex。手动修复：先停 fcitx5，在 $PROFILE 的"
+  warn "[Groups/0/Items/N] 里加 Name=wetypex，再重启 fcitx5。"
+fi
 
 # ── 6. 键盘：修 Shift 切换 ──────────────────────────────────────────────────
 step "修键盘选项（Shift 中英切换）"
@@ -365,8 +391,10 @@ else
   INPUT_LUA="$HOME/.config/hypr/input.lua"
   if [[ ! -f $INPUT_LUA ]]; then
     warn "找不到 $INPUT_LUA，跳过"
-  elif grep -q 'kb_options' "$INPUT_LUA"; then
-    warn "$INPUT_LUA 里已经有 kb_options，跳过以免覆盖你的设置"
+  elif grep -q 'kb_options' <(grep -vE '^[[:space:]]*--' "$INPUT_LUA"); then
+    # 只看生效的配置行：Omarchy 模板 input.lua 里有一段注释掉的 kb_options 示例，
+    # 直接 grep 会命中注释，导致 Shift 修复被永久跳过。
+    warn "$INPUT_LUA 里已经有生效的 kb_options，跳过以免覆盖你的设置"
     warn "请自行确认它不包含 shift:both_capslock_cancel"
   else
     CURRENT="$(hyprctl getoption input:kb_options 2>/dev/null | sed -n 's/^str: *//p')"
@@ -409,12 +437,39 @@ fi
 
 # ── 7. keyd: Fn -> 右 Ctrl ──────────────────────────────────────────────────
 step "配置 Fn 按住说话"
+# 先探测有没有任何输入设备声明 KEY_FN(464)。没有的话，键盘 Fn 是纯固件键，
+# keyd 也看不到，任何软件映射都不可能生效（硬件限制，不是配置问题）。
+if ! python3 - <<'PY' 2>/dev/null
+import glob, sys
+
+def load(p):
+    words = open(p).read().split()
+    v = 0
+    n = len(words)
+    for i, w in enumerate(words):
+        v |= int(w, 16) << (64 * (n - 1 - i))
+    return v
+
+try:
+    has = any((load(f) >> 464) & 1
+              for f in glob.glob('/sys/class/input/event*/device/capabilities/key'))
+except Exception:
+    has = True  # 读不到就不下结论
+sys.exit(0 if has else 1)
+PY
+then
+  warn "本机没有任何输入设备声明 KEY_FN —— 键盘 Fn 很可能是纯固件键，"
+  warn "keyd 也收不到它，Fn 映射注定无效。请改用右 Ctrl 按住说话，"
+  warn "或在 /etc/keyd/default.conf 里把别的键映射成 rightcontrol。"
+fi
 if ((WANT_FN == 0)); then
   info "已跳过（--no-fn）"
 elif ! command -v keyd >/dev/null; then
-  warn "没装 keyd，跳过。想用 Fn 按住说话的话：
-    sudo pacman -S keyd && sudo systemctl enable --now keyd
-    然后在 /etc/keyd/default.conf 里加 fn = rightcontrol"
+  warn "没装 keyd —— Fn「按住说话」不会生效（本项目就是靠 keyd 把 Fn 映射成右 Ctrl）。"
+  warn "启用方法："
+  warn "  sudo pacman -S keyd && sudo systemctl enable --now keyd"
+  warn "  然后重跑本脚本，或在 /etc/keyd/default.conf 里加：fn = rightcontrol"
+  warn "前提：键盘 Fn 必须能被内核识别；纯固件 Fn 键无法映射（见 README 环境要求）。"
 elif ((SUDO_AVAILABLE == 0)); then
   warn "没有 sudo 权限，跳过 keyd 配置。请手动执行："
   warn "  sudo sh -c 'printf \"\\n[main]\\nfn = rightcontrol\\n\" >> /etc/keyd/default.conf'"

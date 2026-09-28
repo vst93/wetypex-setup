@@ -12,6 +12,7 @@ keyboard-us + wetypex（可选再加 rime），并修正 lastIm 的默认值。
 
 用法：
     patch-statusbar-languages.py <Panel.qml> [--with-rime]
+    patch-statusbar-languages.py <Panel.qml> --revert    # 从最近的 .bak 备份还原
 """
 
 import argparse
@@ -32,13 +33,32 @@ ARRAY_RE = re.compile(
 )
 
 
+def revert(panel: pathlib.Path) -> int:
+    """从最近的 Panel.qml.bak.* 备份还原，撤销本补丁。"""
+    if not panel.is_file():
+        print(f"跳过：找不到 {panel}", file=sys.stderr)
+        return 0
+    backups = sorted(panel.parent.glob(panel.name + ".bak.*"))
+    if not backups:
+        print(f"找不到备份（{panel.name}.bak.*），无法还原", file=sys.stderr)
+        return 1
+    latest = backups[-1]
+    shutil.copy2(latest, panel)
+    print(f"已从 {latest.name} 还原 {panel}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("panel", type=pathlib.Path)
     parser.add_argument("--with-rime", action="store_true")
+    parser.add_argument("--revert", action="store_true",
+                        help="从最近的 .bak 备份还原，撤销本补丁")
     args = parser.parse_args()
 
     panel: pathlib.Path = args.panel
+    if args.revert:
+        return revert(panel)
     if not panel.is_file():
         print(f"跳过：找不到 {panel}", file=sys.stderr)
         return 0

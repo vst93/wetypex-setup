@@ -57,7 +57,15 @@
 | 发行版 | **Arch 系**（脚本用 `pacman`；Debian/Fedora 见[手动安装](#手动安装非-arch-系统)） |
 | 桌面 | **Hyprland + Wayland**（键盘那一步依赖 `hyprctl`；其它 Wayland 合成器见下方说明） |
 | 输入法框架 | fcitx5 ≥ 5.1.9 |
-| 可选 | **Omarchy**（浮窗用它的 OSD）、**keyd**（Fn 映射）、**Rust/cargo**（编译浮窗；没有就自动下载 CI 预编译好的二进制） |
+| 可选 | **Omarchy**（浮窗用它的 OSD）、**Rust/cargo**（编译浮窗；没有就自动下载 CI 预编译好的二进制） |
+
+> **关于「按住 Fn 说话」（重要）**：本项目默认靠 **keyd** 把 `Fn` 映射成右 Ctrl 来实现。
+> 有两个前提：① 系统**装了 keyd**（`install.sh` 不会自动装，只在已装时配置）；
+> ② **键盘的 Fn 键必须能被内核识别**（`/sys/class/input/event*/device/capabilities/key`
+> 里要有 `KEY_FN`，即 bit 464）。很多**台式机 / 外接键盘的 Fn 是纯固件键**，不向系统发键码，
+> 这种情况任何软件都无法映射。
+> 没有可用 Fn 时请直接**按住右 Ctrl**（`voice_hold_key` 默认就是 `Control_R`），
+> 或把别的键映射成 `rightcontrol`（例如在 `/etc/keyd/default.conf` 里加 `menu = rightcontrol`）。
 
 > **不是 Omarchy 也能用。** 浮窗程序启动时会探测 Omarchy 的 OSD：
 > 探测不到就自动退回 `notify-send` 桌面通知（只是没有波形动画）。
@@ -467,14 +475,15 @@ sudo keyd monitor
 | 看不到 WeTypeX | `fcitx5-remote -r` 重载；`fcitx5-diagnose` 看插件搜索路径 |
 | 输入核心启动失败 | `fcitx5-wetypex-setup --check`，看 `manifest.txt` / `image.macho` 在不在 |
 | Shift 不切换 | `hyprctl getoption input:kb_options` 是否还含 `shift:both_capslock_cancel` |
-| 按住 Fn 没反应 | `sudo keyd monitor` 按 Fn 是否输出 `rightcontrol`；`wetypex.json` 里 `voice_hold_key` 是否 `Control_R` |
+| 按住 Fn 没反应 | 先确认键盘有没有内核可见的 Fn：`sudo keyd monitor` 按 Fn 看有没有输出。**没有输出 = 纯固件键**，任何映射都没用，改用右 Ctrl；有输出但没反应，检查 keyd 是否在跑、`wetypex.json` 里 `voice_hold_key` 是否为 `Control_R` |
+| fcitx5 列表里没有 wetypex | 游离 fcitx5 实例可能把 `profile` 回写掉了：停掉 fcitx5，手动加 `Name=wetypex`，再启动 |
 | 浮窗不出现 | 服务是否 active；非 Omarchy 环境会退回 `notify-send`，确认装了 `libnotify` |
 | 浮窗 / 语音哪里不对 | `wetypex-voice-osd --status` 一条命令看清楚：显示后端、路径、录音状态、识别结果、当前电平 |
 | 末尾几个字识别不出来 | 调大补录尾巴：`echo 1.5 > ~/.config/wetypex-setup/voice-tail`；确认补丁在：`sudo wetypex-patch-voice-tail --check` |
 | 浮窗出现但没文字 | 看 `state/voice/result.json` 的 `ok`；`ok:false` 说明没识别到内容 |
 | 识别不出内容 | 见[踩坑记录](#踩坑记录)第 4 条，以及麦克风：`pw-record --rate 48000 --channels 1 /tmp/t.wav` 录 5 秒说话，`ffmpeg -i /tmp/t.wav -af volumedetect -f null -` 看 `max_volume`（正常说话应在 -20 ~ -30 dB） |
 | 状态栏一直显示 EN | 状态栏插件的输入法列表是写死的，跑 `extras/patch-statusbar-languages.py` |
-| `Ctrl+Win+Shift` 没反应 | 看 `~/.config/fcitx5/wetypex.json` 里 `voice_launch_shortcut` 是不是被设置窗口关成了 `false`（改成 `true` 后重启 fcitx5） |
+| `Ctrl+Win+Shift` 没反应 | `~/.config/fcitx5/wetypex.json` 里 `voice_launch_shortcut` 被**账号云端设置同步**覆盖成了 `false`（改成 `true` 后重启 fcitx5；注意下次同步可能又被覆盖） |
 | 云候选 / 语音没结果 | 需要配对账户：`fcitx5-wetypex-settings` → 账户/设备 → 六位匹配码 |
 
 ---
@@ -487,6 +496,13 @@ sudo keyd monitor
 ```
 
 用户数据（配对身份、词库、语音缓存）不会被自动删除，卸载完会提示路径。
+
+状态栏插件补丁如果打过了，可以这样撤销（会从最近的 `.bak` 备份还原）：
+
+```bash
+python3 extras/patch-statusbar-languages.py \
+  ~/.config/omarchy/plugins/unseencurtain.languages/Panel.qml --revert
+```
 
 ---
 
