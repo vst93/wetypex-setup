@@ -429,6 +429,7 @@ sudo keyd monitor
 | Shift 不切换 | `hyprctl getoption input:kb_options` 是否还含 `shift:both_capslock_cancel` |
 | 按住 Fn 没反应 | `sudo keyd monitor` 按 Fn 是否输出 `rightcontrol`；`wetypex.json` 里 `voice_hold_key` 是否 `Control_R` |
 | 浮窗不出现 | 服务是否 active；非 Omarchy 环境会退回 `notify-send`，确认装了 `libnotify` |
+| 浮窗 / 语音哪里不对 | `wetypex-voice-osd --status` 一条命令看清楚：显示后端、路径、录音状态、识别结果、当前电平 |
 | 浮窗出现但没文字 | 看 `state/voice/result.json` 的 `ok`；`ok:false` 说明没识别到内容 |
 | 识别不出内容 | 见[踩坑记录](#踩坑记录)第 4 条，以及麦克风：`pw-record --rate 48000 --channels 1 /tmp/t.wav` 录 5 秒说话，`ffmpeg -i /tmp/t.wav -af volumedetect -f null -` 看 `max_volume`（正常说话应在 -20 ~ -30 dB） |
 | 状态栏一直显示 EN | 状态栏插件的输入法列表是写死的，跑 `extras/patch-statusbar-languages.py` |

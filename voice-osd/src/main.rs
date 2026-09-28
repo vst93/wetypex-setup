@@ -218,6 +218,59 @@ fn render_wave(history: &[f64; BARS]) -> String {
         .collect()
 }
 
+// ── 命令行 ──────────────────────────────────────────────────────────────────
+
+fn print_help() {
+    println!(
+        "\
+wetypex-voice-osd {version}
+
+WeTypeX 语音输入浮窗提示。
+监听 WeTypeX 写下的状态文件，用 Omarchy 的 OSD（探测不到就退回
+notify-send）显示录音时的实时音量波形、识别状态与识别结果。
+
+用法:
+  wetypex-voice-osd            前台运行（一般交给 systemd 用户服务）
+  wetypex-voice-osd --status   打印探测结果与路径，排查用
+
+选项:
+  -h, --help      显示本帮助
+  -V, --version   显示版本
+      --status    显示检测到的显示后端、状态文件路径与当前状态
+
+可调参数在源码顶部的常量里：波形格数 BARS、刷新间隔 TICK、
+灵敏度 DB_MIN/DB_MAX、结果最多显示字数 TEXT_MAX。
+",
+        version = env!("CARGO_PKG_VERSION")
+    );
+}
+
+/// `--status`：把探测结果和当前状态打出来，方便别人贴日志求助。
+fn print_status(paths: &Paths) {
+    let ui = match Ui::detect(&paths.shell) {
+        Ui::Osd => "Omarchy OSD（屏幕底部浮窗，支持波形）",
+        Ui::Notify => "notify-send（桌面通知，无波形）",
+    };
+    let recording = if paths.recording.exists() { "是" } else { "否" };
+    let result = read(&paths.result)
+        .map(|text| text.trim().to_string())
+        .unwrap_or_else(|| "（无）".into());
+    let inbox = read(&paths.inbox)
+        .map(|text| text.trim().to_string())
+        .unwrap_or_else(|| "（无）".into());
+
+    println!("wetypex-voice-osd {}", env!("CARGO_PKG_VERSION"));
+    println!("显示后端   : {ui}");
+    println!("Omarchy    : {}", paths.shell.display());
+    println!("录音状态   : {recording}");
+    println!("录音文件   : {}（{} 字节）",
+        paths.wav.display(),
+        fs::metadata(&paths.wav).map(|m| m.len()).unwrap_or(0));
+    println!("识别结果   : {result}");
+    println!("待插入队列 : {inbox}");
+    println!("当前电平   : {:.0}%", level(&paths.wav) * 100.0);
+}
+
 // ── 极简 JSON 取值（只解析我们自己脚本写出的内容） ──────────────────────────
 
 fn read(path: &Path) -> Option<String> {
@@ -278,6 +331,28 @@ fn truncate(text: &str, max: usize) -> String {
 
 fn main() {
     let paths = Paths::discover();
+
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print_help();
+                return;
+            }
+            "-V" | "--version" => {
+                println!("wetypex-voice-osd {}", env!("CARGO_PKG_VERSION"));
+                return;
+            }
+            "--status" => {
+                print_status(&paths);
+                return;
+            }
+            other => {
+                eprintln!("未知参数: {other}（用 --help 看用法）");
+                std::process::exit(2);
+            }
+        }
+    }
+
     let ui = Ui::detect(&paths.shell);
 
     let mut history = [0.0f64; BARS];

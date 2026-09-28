@@ -1,6 +1,6 @@
 [package]
 name = "wetypex-voice-osd"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 description = "WeTypeX 语音输入浮窗提示：Omarchy OSD + 实时音量波形"
 license = "MIT"

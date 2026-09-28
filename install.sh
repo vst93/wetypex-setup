@@ -8,7 +8,7 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly SELF_VERSION="1.0.0"
+readonly SELF_VERSION="1.0.1"
 # 预编译浮窗二进制的下载来源（fork 之后改成自己的仓库）
 readonly GITHUB_REPO="vst93/wetypex-setup"
 

@@ -1,6 +1,7 @@
 # wetypex-voice-osd
 
-WeTypeX 语音输入的浮窗提示 —— 用 Omarchy 自带的 OSD 显示**实时音量波形**、识别状态和识别结果。
+WeTypeX 语音输入的浮窗提示 —— 用 Omarchy 自带的 OSD 显示**实时音量波形**、识别状态和识别结果；
+探测不到 Omarchy 的 OSD 时会自动退回 `notify-send` 桌面通知（无波形）。
 
 纯 `std` 实现，**零依赖**，离线也能 `cargo build`。
 
@@ -44,6 +45,32 @@ voice-inbox.json   —— 待插入输入框的文字（有新版本 = 识别成
 cargo build --release
 install -m 755 target/release/wetypex-voice-osd ~/.local/bin/wetypex-voice-osd
 ```
+
+## 命令行
+
+平时由 systemd 用户服务在后台跑，不需要手动启动。排查时可以用：
+
+```bash
+wetypex-voice-osd --status     # 显示后端 / 路径 / 当前录音状态 / 当前电平
+wetypex-voice-osd --version
+wetypex-voice-osd --help
+```
+
+`--status` 输出示例：
+
+```text
+wetypex-voice-osd 1.0.1
+显示后端   : Omarchy OSD（屏幕底部浮窗，支持波形）
+Omarchy    : /usr/share/omarchy/shell
+录音状态   : 否
+录音文件   : /home/v/.local/share/fcitx5-wetypex/state/voice/input.wav（78496 字节）
+识别结果   : {"ok": true, "text": "潘森", ...}
+待插入队列 : {"version": 1790539039, "text": "潘森"}
+当前电平   : 0%
+```
+
+别人报“没反应”时，让他把 `--status` 的输出贴出来，就能判断卡在哪一步
+（显示后端 / 录音 / 识别 / 回填）。
 
 ## 开机自启
 
