@@ -206,7 +206,8 @@ fi
 # ── 3. 官方运行时 ───────────────────────────────────────────────────────────
 step "准备官方运行时（输入核心 + 词典 + 界面资源）"
 core_ready() {
-  fcitx5-wetypex-setup --check 2>/dev/null | grep -q '"core_ready": *true'
+  fcitx5-wetypex-setup --check 2>/dev/null \
+    | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("core_ready") else 1)' 2>/dev/null
 }
 if core_ready; then
   ok "运行时已就绪"
@@ -257,15 +258,21 @@ ok "wetypex.json 已更新（已存在的设置保持不变）"
 # ── 5. fcitx5 profile ───────────────────────────────────────────────────────
 step "把 wetypex 加进 fcitx5 输入法列表"
 
+# 注意：不能用 `systemctl ... | grep -q`。脚本开了 set -o pipefail，
+# 而 grep -q 命中后会立即退出，systemctl 收到 SIGPIPE，整个管道被判为失败。
+fcitx5_has_unit() {
+  systemctl --user cat omarchy-fcitx5.service >/dev/null 2>&1
+}
+
 fcitx5_stop() {
-  if systemctl --user list-unit-files 2>/dev/null | grep -q '^omarchy-fcitx5.service'; then
+  if fcitx5_has_unit; then
     systemctl --user stop omarchy-fcitx5.service 2>/dev/null || true
   fi
   pkill -f '^/usr/bin/fcitx5' 2>/dev/null || true
   sleep 1
 }
 fcitx5_start() {
-  if systemctl --user list-unit-files 2>/dev/null | grep -q '^omarchy-fcitx5.service'; then
+  if fcitx5_has_unit; then
     # 这个 unit 是 Type=dbus，而 session bus 在 Arch 上是 dbus-broker（不支持
     # SystemdService=），所以只要服务不在跑、又有客户端请求 org.fcitx.Fcitx5，
     # bus 就会按 /usr/share/dbus-1/services/ 直接拉一个游离实例跟 systemd 抢名字。
